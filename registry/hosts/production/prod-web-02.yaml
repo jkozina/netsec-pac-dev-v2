@@ -1,0 +1,35 @@
+apiVersion: netsec/v1
+kind: Host
+metadata:
+  name: prod-web-02
+  owner: web-platform-team@company.com
+  cmdb-id: CI-10002
+  description: Production web server 02
+
+spec:
+  description: "Primary production web server - East datacenter"
+  environment: production
+  location: datacenter-east
+  
+  addresses:
+    ipv4:
+      - 10.100.1.11
+    fqdn:
+      - prod-web-02.internal.company.com
+      
+  platform-refs:
+    aws:
+      instance-id: i-0abc123def457
+      account: prod-web-account
+      vpc-id: vpc-prod-east
+    illumio:
+      workload-href: /orgs/1/workloads/web-02
+    paloalto:
+      registered-ip: "yes"
+      
+  labels:
+    app: web-frontend
+    tier: web
+    environment: production
+    data-classification: internal
+    compliance: pci-in-scope
