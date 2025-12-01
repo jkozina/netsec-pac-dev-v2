@@ -94,11 +94,11 @@
                 },
                 "vpc-id": {
                   "type": "string",
-                  "pattern": "^vpc-[a-f0-9]+$"
+                  "description": "AWS VPC ID (vpc-xxx) or friendly name"
                 },
                 "subnet-id": {
                   "type": "string",
-                  "pattern": "^subnet-[a-f0-9]+$"
+                  "description": "AWS Subnet ID (subnet-xxx) or friendly name"
                 }
               }
             },
