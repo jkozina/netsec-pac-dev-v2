@@ -1,0 +1,29 @@
+apiVersion: netsec/v1
+kind: Service
+metadata:
+  name: https
+  description: Standard HTTPS traffic
+
+spec:
+  description: "Standard HTTPS (TLS) traffic on port 443"
+  
+  protocols:
+    - protocol: tcp
+      port: 443
+      description: HTTPS
+
+  platform-mapping:
+    paloalto:
+      use-app-id: true
+      applications:
+        - ssl
+        - web-browsing
+      service: application-default
+      
+    fortinet:
+      service-name: HTTPS
+      
+    illumio:
+      service:
+        proto: 6
+        port: 443

@@ -1,0 +1,96 @@
+# Guardrail Rules for Network Security Policies
+# These rules determine auto-approve, require-review, or deny actions
+
+apiVersion: netsec/v1
+kind: GuardrailRules
+
+rules:
+  # Deny any-to-any rules - these are never allowed
+  - name: deny-any-to-any
+    description: "Any-to-any rules are prohibited"
+    conditions:
+      - "source.type == any AND destination.type == any"
+    action: deny
+    message: "Any-to-any rules are prohibited by security policy"
+
+  # Require review for internet-facing rules
+  - name: review-internet-source
+    description: "Rules with internet source require review"
+    conditions:
+      - "source.type == internet"
+      - "source.cidr == 0.0.0.0/0"
+    action: require-review
+    reviewers: ["@network-security-team", "@security-architecture"]
+    message: "Internet-facing ingress rules require security review"
+
+  - name: review-internet-destination
+    description: "Rules allowing outbound to internet require review"
+    conditions:
+      - "destination.type == internet"
+      - "destination.cidr == 0.0.0.0/0"
+    action: require-review
+    reviewers: ["@network-security-team"]
+    message: "Internet egress rules require security review"
+
+  # Require review for cross-environment rules
+  - name: review-cross-environment
+    description: "Cross-environment traffic requires review"
+    conditions:
+      - "source.environment != destination.environment"
+    action: require-review
+    reviewers: ["@network-security-team"]
+    message: "Cross-environment traffic requires security review"
+
+  # Require review for database access
+  - name: review-database-access
+    description: "Direct database access requires review"
+    conditions:
+      - "destination.group contains 'database'"
+      - "services contains 'mysql'"
+      - "services contains 'postgres'"
+      - "services contains 'mssql'"
+    action: require-review
+    reviewers: ["@network-security-team", "@database-team"]
+    message: "Database access requires security and DBA review"
+
+  # Require review for non-standard ports
+  - name: review-non-standard-ports
+    description: "Non-standard ports require review"
+    conditions:
+      - "services.port not in [22, 80, 443, 8080, 8443, 3306, 5432, 1433, 6379, 27017]"
+    action: require-review
+    reviewers: ["@network-security-team"]
+    message: "Non-standard ports require security review"
+
+  # Auto-approve standard web traffic within same environment
+  - name: auto-approve-same-env-https
+    description: "Auto-approve HTTPS within same environment"
+    conditions:
+      - "source.environment == destination.environment"
+      - "services == https OR services.port == 443"
+    action: auto-approve
+
+  # Auto-approve standard SSH from bastion
+  - name: auto-approve-bastion-ssh
+    description: "Auto-approve SSH from bastion hosts"
+    conditions:
+      - "source.group == bastion-hosts"
+      - "services == ssh OR services.port == 22"
+    action: auto-approve
+
+  # Temporary rules require expiration
+  - name: require-expiration-for-temp
+    description: "Temporary rules must have expiration"
+    conditions:
+      - "metadata.labels.temporary == true"
+      - "metadata.expiration == null"
+    action: deny
+    message: "Temporary rules must have an expiration date"
+
+  # Maximum expiration of 90 days for temporary rules
+  - name: max-expiration-90-days
+    description: "Temporary rules cannot exceed 90 days"
+    conditions:
+      - "metadata.expiration > now + 90 days"
+    action: require-review
+    message: "Temporary rules exceeding 90 days require security review"

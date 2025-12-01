@@ -1,0 +1,467 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://company.com/schemas/group.json",
+  "title": "Group",
+  "description": "Schema for network group definitions",
+  "type": "object",
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "enum": ["netsec/v1"],
+      "description": "API version for the schema"
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["Group"],
+      "description": "Resource type"
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*[a-z0-9]$",
+          "minLength": 3,
+          "maxLength": 63,
+          "description": "Unique group name"
+        },
+        "owner": {
+          "type": "string",
+          "format": "email",
+          "description": "Email of the team/person owning this group"
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 255,
+          "description": "Human-readable description"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "required": ["membership"],
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "Detailed description of the group"
+        },
+        "membership": {
+          "type": "object",
+          "properties": {
+            "static": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^host/[a-z0-9-]+$"
+              },
+              "description": "Explicit host references (e.g., host/prod-web-01)"
+            },
+            "dynamic": {
+              "type": "object",
+              "properties": {
+                "match-labels": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "description": "Labels that hosts must match to be included"
+                }
+              },
+              "description": "Dynamic membership based on host labels"
+            },
+            "networks": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^([0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$"
+              },
+              "description": "CIDR ranges to include"
+            },
+            "groups": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Nested group references"
+            }
+          },
+          "description": "Group membership definition"
+        },
+        "platform-mapping": {
+          "type": "object",
+          "properties": {
+            "paloalto": {
+              "$ref": "#/definitions/paloaltoMapping"
+            },
+            "illumio": {
+              "$ref": "#/definitions/illumioMapping"
+            },
+            "aws": {
+              "$ref": "#/definitions/awsMapping"
+            },
+            "gcp": {
+              "$ref": "#/definitions/gcpMapping"
+            },
+            "azure": {
+              "$ref": "#/definitions/azureMapping"
+            },
+            "fortinet": {
+              "$ref": "#/definitions/fortinetMapping"
+            }
+          },
+          "description": "Platform-specific representation mappings"
+        }
+      }
+    }
+  },
+  "definitions": {
+    "paloaltoMapping": {
+      "type": "object",
+      "required": ["strategy"],
+      "properties": {
+        "strategy": {
+          "type": "string",
+          "enum": ["dag-only", "static-only", "hybrid"],
+          "description": "How to represent this group in Palo Alto"
+        },
+        "dag": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "Dynamic Address Group name"
+            },
+            "match-criteria": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "DAG match criteria expressions"
+            }
+          }
+        },
+        "static": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "Static Address Group name"
+            },
+            "include-networks": {
+              "type": "boolean",
+              "default": true
+            },
+            "include-hosts": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        },
+        "combined": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "Combined group name (referenced by policies)"
+            },
+            "members": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["type", "ref"],
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": ["dag", "static"]
+                  },
+                  "ref": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "device-groups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "include": {
+                "type": "boolean",
+                "default": true
+              },
+              "strategy-override": {
+                "type": "string",
+                "enum": ["dag-only", "static-only", "hybrid"]
+              }
+            }
+          }
+        }
+      }
+    },
+    "illumioMapping": {
+      "type": "object",
+      "required": ["strategy"],
+      "properties": {
+        "strategy": {
+          "type": "string",
+          "enum": ["label-based", "ip-list", "hybrid"],
+          "description": "How to represent this group in Illumio"
+        },
+        "labels": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["key", "value"],
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "value": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "ip-list": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "include-networks": {
+              "type": "boolean",
+              "default": true
+            },
+            "include-hosts": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        },
+        "pce-scope": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "org-id": {
+                "type": "integer"
+              },
+              "include": {
+                "type": "boolean",
+                "default": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "awsMapping": {
+      "type": "object",
+      "required": ["strategy"],
+      "properties": {
+        "strategy": {
+          "type": "string",
+          "enum": ["security-group-preferred", "cidr-only"],
+          "description": "How to represent this group in AWS"
+        },
+        "security-group": {
+          "type": "object",
+          "properties": {
+            "tag-key": {
+              "type": "string"
+            },
+            "tag-value": {
+              "type": "string"
+            }
+          }
+        },
+        "cidr-fallback": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "use-networks": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        },
+        "accounts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "account-alias": {
+                "type": "string"
+              },
+              "vpc-ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "use-security-group": {
+                "type": "boolean"
+              },
+              "use-cidr": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
+    },
+    "gcpMapping": {
+      "type": "object",
+      "required": ["strategy"],
+      "properties": {
+        "strategy": {
+          "type": "string",
+          "enum": ["network-tag-preferred", "service-account-preferred", "cidr-only"]
+        },
+        "network-tag": {
+          "type": "object",
+          "properties": {
+            "tag": {
+              "type": "string"
+            }
+          }
+        },
+        "service-account": {
+          "type": "object",
+          "properties": {
+            "email": {
+              "type": "string",
+              "format": "email"
+            }
+          }
+        },
+        "cidr-fallback": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "use-networks": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        },
+        "projects": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "project-id": {
+                "type": "string"
+              },
+              "use-network-tag": {
+                "type": "boolean"
+              },
+              "use-service-account": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
+    },
+    "azureMapping": {
+      "type": "object",
+      "required": ["strategy"],
+      "properties": {
+        "strategy": {
+          "type": "string",
+          "enum": ["asg-preferred", "cidr-only"]
+        },
+        "asg": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "resource-group": {
+              "type": "string"
+            }
+          }
+        },
+        "cidr-fallback": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "use-networks": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        }
+      }
+    },
+    "fortinetMapping": {
+      "type": "object",
+      "required": ["strategy"],
+      "properties": {
+        "strategy": {
+          "type": "string",
+          "enum": ["address-group"]
+        },
+        "address-group": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            }
+          }
+        },
+        "member-type": {
+          "type": "string",
+          "enum": ["ip-only", "fqdn-only", "mixed"],
+          "default": "mixed"
+        },
+        "include-networks": {
+          "type": "boolean",
+          "default": true
+        },
+        "include-hosts": {
+          "type": "boolean",
+          "default": true
+        },
+        "adom-scope": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "adom": {
+                "type": "string"
+              },
+              "include": {
+                "type": "boolean",
+                "default": true
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

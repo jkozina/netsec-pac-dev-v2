@@ -1,0 +1,28 @@
+apiVersion: netsec/v1
+kind: Service
+metadata:
+  name: ssh
+  description: Secure Shell
+
+spec:
+  description: "SSH for secure remote access"
+  
+  protocols:
+    - protocol: tcp
+      port: 22
+      description: SSH
+
+  platform-mapping:
+    paloalto:
+      use-app-id: true
+      applications:
+        - ssh
+      service: application-default
+      
+    fortinet:
+      service-name: SSH
+      
+    illumio:
+      service:
+        proto: 6
+        port: 22

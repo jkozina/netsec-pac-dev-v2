@@ -1,0 +1,344 @@
+name: Validate Policy Changes
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'registry/**'
+      - 'policies/**'
+      - 'guardrails/**'
+      - 'adapters/**'
+      - 'schemas/**'
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  detect-changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      policies_changed: ${{ steps.changes.outputs.policies }}
+      registry_changed: ${{ steps.changes.outputs.registry }}
+      affected_policies: ${{ steps.affected.outputs.policies }}
+      has_changes: ${{ steps.affected.outputs.has_changes }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed file categories
+        id: changes
+        run: |
+          CHANGED=$(git diff --name-only origin/main...HEAD)
+          
+          echo "policies=$(echo "$CHANGED" | grep -q '^policies/' && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
+          echo "registry=$(echo "$CHANGED" | grep -q '^registry/' && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
+          
+          echo "Changed files:"
+          echo "$CHANGED"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Identify affected policies
+        id: affected
+        run: |
+          CHANGED_FILES=$(git diff --name-only origin/main...HEAD | tr '\n' ' ')
+          
+          python scripts/analyze_changes.py \
+            --changed-files "$CHANGED_FILES" \
+            --registry registry/ \
+            --policies policies/ \
+            --output analysis.json
+          
+          echo "policies=$(jq -c '.affected_policies' analysis.json)" >> $GITHUB_OUTPUT
+          echo "has_changes=$(jq -r '.regeneration_needed' analysis.json)" >> $GITHUB_OUTPUT
+          
+          echo "Analysis results:"
+          cat analysis.json
+
+  validate-schemas:
+    name: Schema Validation
+    needs: detect-changes
+    if: needs.detect-changes.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Validate registry schemas
+        run: |
+          python -m adapters.cli validate \
+            --registry registry/ \
+            --schema-only
+
+      - name: Validate policy schemas
+        run: |
+          python -m adapters.cli validate \
+            --policies policies/ \
+            --schema-only
+
+  validate-references:
+    name: Reference Validation
+    needs: [detect-changes, validate-schemas]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Validate object references
+        run: |
+          python -m adapters.cli validate \
+            --registry registry/ \
+            --policies policies/ \
+            --check-references
+
+  evaluate-guardrails:
+    name: Guardrail Evaluation
+    needs: [detect-changes, validate-references]
+    runs-on: ubuntu-latest
+    outputs:
+      auto_approve: ${{ steps.guardrails.outputs.auto_approve }}
+      require_review: ${{ steps.guardrails.outputs.require_review }}
+      denied: ${{ steps.guardrails.outputs.denied }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Evaluate guardrails
+        id: guardrails
+        run: |
+          python scripts/evaluate_guardrails.py \
+            --policies '${{ needs.detect-changes.outputs.affected_policies }}' \
+            --rules guardrails/rules.yaml \
+            --registry registry/ \
+            --output guardrail-results.json
+          
+          echo "auto_approve=$(jq -r '.auto_approve' guardrail-results.json)" >> $GITHUB_OUTPUT
+          echo "require_review=$(jq -r '.require_review' guardrail-results.json)" >> $GITHUB_OUTPUT
+          echo "denied=$(jq -r '.denied' guardrail-results.json)" >> $GITHUB_OUTPUT
+          
+          echo "Guardrail results:"
+          cat guardrail-results.json
+
+      - name: Upload guardrail results
+        uses: actions/upload-artifact@v4
+        with:
+          name: guardrail-results
+          path: guardrail-results.json
+
+      - name: Fail if guardrails denied
+        if: steps.guardrails.outputs.denied == 'true'
+        run: |
+          echo "::error::Policy denied by guardrails"
+          jq '.denied_policies' guardrail-results.json
+          exit 1
+
+  generate-and-plan:
+    name: Generate & Plan (${{ matrix.platform }})
+    needs: [detect-changes, evaluate-guardrails]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        platform: [aws, gcp, azure, paloalto, fortinet, illumio]
+      fail-fast: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Generate Terraform
+        run: |
+          python -m adapters.cli generate \
+            --registry registry/ \
+            --policies '${{ needs.detect-changes.outputs.affected_policies }}' \
+            --platform ${{ matrix.platform }} \
+            --output generated/terraform/
+
+      - name: Upload generated Terraform
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-${{ matrix.platform }}
+          path: generated/terraform/${{ matrix.platform }}/
+
+      - name: Trigger TFE speculative plan
+        if: env.TFE_TOKEN != ''
+        env:
+          TFE_TOKEN: ${{ secrets.TFE_TOKEN }}
+          TFE_ORG: ${{ vars.TFE_ORG }}
+        run: |
+          python scripts/tfe_plan.py \
+            --platform ${{ matrix.platform }} \
+            --generated-dir generated/terraform/${{ matrix.platform }}/ \
+            --speculative \
+            --output plan-results-${{ matrix.platform }}.json
+
+      - name: Upload plan results
+        if: env.TFE_TOKEN != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: plan-results-${{ matrix.platform }}
+          path: plan-results-${{ matrix.platform }}.json
+
+  comment-on-pr:
+    name: Comment on PR
+    needs: [detect-changes, evaluate-guardrails, generate-and-plan]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download guardrail results
+        uses: actions/download-artifact@v4
+        with:
+          name: guardrail-results
+          path: ./
+
+      - name: Download all plan results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: plan-results-*
+          path: plan-results/
+          merge-multiple: true
+        continue-on-error: true
+
+      - name: Generate PR comment
+        run: |
+          python scripts/generate_pr_comment.py \
+            --guardrails guardrail-results.json \
+            --plan-results-dir plan-results/ \
+            --output comment.md
+          
+          echo "Generated comment:"
+          cat comment.md
+
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const comment = fs.readFileSync('comment.md', 'utf8');
+            
+            // Find existing bot comment to update
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            
+            const botComment = comments.find(c => 
+              c.user.type === 'Bot' && 
+              c.body.includes('Network Policy Validation Results')
+            );
+            
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: comment
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: comment
+              });
+            }
+
+  apply-labels:
+    name: Apply Labels
+    needs: [evaluate-guardrails]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Apply guardrail labels
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const autoApprove = '${{ needs.evaluate-guardrails.outputs.auto_approve }}' === 'true';
+            const requireReview = '${{ needs.evaluate-guardrails.outputs.require_review }}' === 'true';
+            
+            // Remove existing guardrail labels
+            const { data: labels } = await github.rest.issues.listLabelsOnIssue({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            
+            for (const label of labels) {
+              if (label.name.startsWith('guardrails:')) {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  name: label.name
+                });
+              }
+            }
+            
+            // Apply new labels
+            const newLabels = [];
+            if (autoApprove) newLabels.push('guardrails:auto-approve');
+            if (requireReview) newLabels.push('guardrails:needs-review');
+            
+            if (newLabels.length > 0) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                labels: newLabels
+              });
+            }

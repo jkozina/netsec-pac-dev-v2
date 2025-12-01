@@ -1,0 +1,17 @@
+# Network Security Policy-as-Code Dependencies
+
+# Core dependencies
+pydantic>=2.0.0
+pyyaml>=6.0
+click>=8.0.0
+jsonschema>=4.0.0
+
+# HTTP client for TFE API
+requests>=2.28.0
+
+# Development dependencies
+pytest>=7.0.0
+pytest-cov>=4.0.0
+black>=23.0.0
+ruff>=0.1.0
+mypy>=1.0.0

@@ -1,0 +1,88 @@
+apiVersion: netsec/v1
+kind: Group
+metadata:
+  name: web-tier
+  owner: web-platform-team@company.com
+  description: All web tier servers
+
+spec:
+  description: "Web tier servers across all environments"
+  
+  membership:
+    # Dynamic membership - automatically includes hosts with matching labels
+    dynamic:
+      match-labels:
+        tier: web
+        environment: production
+        
+    # Static network ranges for legacy systems
+    networks:
+      - 10.100.1.0/24    # Web subnet - East DC
+      - 10.200.1.0/24    # Web subnet - West DC
+
+  platform-mapping:
+    paloalto:
+      strategy: hybrid
+      dag:
+        name: dag-web-tier
+        match-criteria:
+          - "'tier.web' and 'env.production'"
+      static:
+        name: grp-web-tier-static
+        include-networks: true
+        include-hosts: true
+      combined:
+        name: grp-web-tier
+        members:
+          - type: dag
+            ref: dag-web-tier
+          - type: static
+            ref: grp-web-tier-static
+      device-groups:
+        - name: datacenter-east
+          include: true
+        - name: datacenter-west
+          include: true
+
+    illumio:
+      strategy: label-based
+      labels:
+        - key: app
+          value: web-tier
+        - key: env
+          value: production
+      ip-list:
+        name: ipl-web-tier-external
+        include-networks: true
+
+    aws:
+      strategy: security-group-preferred
+      security-group:
+        tag-key: netsec:group
+        tag-value: web-tier
+      cidr-fallback:
+        enabled: true
+        use-networks: true
+
+    gcp:
+      strategy: network-tag-preferred
+      network-tag:
+        tag: web-tier
+      cidr-fallback:
+        enabled: true
+
+    fortinet:
+      strategy: address-group
+      address-group:
+        name: grp-web-tier
+      member-type: mixed
+      include-networks: true
+      include-hosts: true
+
+    azure:
+      strategy: asg-preferred
+      asg:
+        name: asg-web-tier
+        resource-group: rg-network-security
+      cidr-fallback:
+        enabled: true

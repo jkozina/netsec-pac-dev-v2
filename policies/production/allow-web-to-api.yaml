@@ -1,0 +1,47 @@
+apiVersion: netsec/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-web-to-api
+  requestor: john.smith@company.com
+  ticket: SNOW-12345
+  environment: production
+  labels:
+    application: web-platform
+    change-window: standard
+
+spec:
+  description: "Allow web tier to communicate with API tier on HTTPS"
+  
+  source:
+    group: web-tier
+    
+  destination:
+    group: api-tier
+    
+  services:
+    - https
+    
+  action: allow
+  logging: true
+  
+  targets:
+    - platform: paloalto
+      scope:
+        - datacenter-east
+        - datacenter-west
+    - platform: aws
+      scope:
+        - prod-web
+        - prod-api
+    - platform: gcp
+      scope:
+        - prod-web-project
+    - platform: illumio
+      scope:
+        - pce-prod
+    - platform: fortinet
+      scope:
+        - adom-production
+    - platform: azure
+      scope:
+        - subscription-prod

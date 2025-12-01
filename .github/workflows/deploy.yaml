@@ -1,0 +1,164 @@
+name: Deploy Policy Changes
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'registry/**'
+      - 'policies/**'
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  analyze:
+    name: Analyze Changes
+    runs-on: ubuntu-latest
+    outputs:
+      affected_policies: ${{ steps.analyze.outputs.affected_policies }}
+      affected_workspaces: ${{ steps.generate.outputs.workspaces }}
+      has_changes: ${{ steps.analyze.outputs.has_changes }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Identify changed files
+        id: changes
+        run: |
+          CHANGED=$(git diff --name-only HEAD~1 HEAD | tr '\n' ' ')
+          echo "files=$CHANGED" >> $GITHUB_OUTPUT
+          echo "Changed files: $CHANGED"
+
+      - name: Analyze changes
+        id: analyze
+        run: |
+          python scripts/analyze_changes.py \
+            --changed-files "${{ steps.changes.outputs.files }}" \
+            --registry registry/ \
+            --policies policies/ \
+            --output analysis.json
+          
+          echo "affected_policies=$(jq -c '.affected_policies' analysis.json)" >> $GITHUB_OUTPUT
+          echo "has_changes=$(jq -r '.regeneration_needed' analysis.json)" >> $GITHUB_OUTPUT
+          
+          cat analysis.json
+
+      - name: Generate all Terraform
+        id: generate
+        if: steps.analyze.outputs.has_changes == 'true'
+        run: |
+          python -m adapters.cli generate \
+            --registry registry/ \
+            --policies '${{ steps.analyze.outputs.affected_policies }}' \
+            --output generated/terraform/ \
+            --workspace-manifest workspaces.json
+          
+          echo "workspaces=$(cat workspaces.json)" >> $GITHUB_OUTPUT
+          
+          echo "Generated workspaces:"
+          cat workspaces.json
+
+      - name: Commit generated Terraform
+        if: steps.analyze.outputs.has_changes == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          git add generated/
+          
+          if git diff --staged --quiet; then
+            echo "No changes to generated files"
+          else
+            git commit -m "chore: regenerate Terraform from ${{ github.sha }}"
+            git push
+          fi
+
+      - name: Upload workspace manifest
+        if: steps.analyze.outputs.has_changes == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: workspace-manifest
+          path: workspaces.json
+
+  deploy:
+    name: Deploy to TFE
+    needs: analyze
+    if: needs.analyze.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        workspace: ${{ fromJson(needs.analyze.outputs.affected_workspaces || '[]') }}
+      max-parallel: 5
+      fail-fast: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Trigger TFE apply
+        env:
+          TFE_TOKEN: ${{ secrets.TFE_TOKEN }}
+          TFE_ORG: ${{ vars.TFE_ORG }}
+        run: |
+          python scripts/tfe_apply.py \
+            --workspace "${{ matrix.workspace }}" \
+            --message "Policy deployment from ${{ github.sha }}" \
+            --auto-apply
+
+      - name: Wait for apply completion
+        env:
+          TFE_TOKEN: ${{ secrets.TFE_TOKEN }}
+          TFE_ORG: ${{ vars.TFE_ORG }}
+        run: |
+          python scripts/tfe_wait.py \
+            --workspace "${{ matrix.workspace }}" \
+            --timeout 600
+
+  notify:
+    name: Send Notifications
+    needs: [analyze, deploy]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Send notification
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          python scripts/notify.py \
+            --status "${{ needs.deploy.result }}" \
+            --commit "${{ github.sha }}" \
+            --commit-url "${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}" \
+            --workspaces '${{ needs.analyze.outputs.affected_workspaces }}'
+        continue-on-error: true

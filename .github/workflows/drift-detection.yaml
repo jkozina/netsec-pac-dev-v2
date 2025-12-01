@@ -1,0 +1,202 @@
+name: Drift Detection
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # Every 6 hours
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Platform to check (leave empty for all)'
+        required: false
+        type: choice
+        options:
+          - ''
+          - aws
+          - gcp
+          - azure
+          - paloalto
+          - fortinet
+          - illumio
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  detect-drift:
+    name: Detect Drift (${{ matrix.platform }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        platform: [aws, gcp, azure, paloalto, fortinet, illumio]
+      fail-fast: false
+    steps:
+      - name: Check if platform should run
+        id: should-run
+        run: |
+          INPUT_PLATFORM="${{ github.event.inputs.platform }}"
+          MATRIX_PLATFORM="${{ matrix.platform }}"
+          
+          if [ -z "$INPUT_PLATFORM" ] || [ "$INPUT_PLATFORM" = "$MATRIX_PLATFORM" ]; then
+            echo "run=true" >> $GITHUB_OUTPUT
+          else
+            echo "run=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Checkout
+        if: steps.should-run.outputs.run == 'true'
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        if: steps.should-run.outputs.run == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        if: steps.should-run.outputs.run == 'true'
+        run: pip install -r requirements.txt
+
+      - name: Get workspaces for platform
+        if: steps.should-run.outputs.run == 'true'
+        id: workspaces
+        env:
+          TFE_TOKEN: ${{ secrets.TFE_TOKEN }}
+          TFE_ORG: ${{ vars.TFE_ORG }}
+        run: |
+          python scripts/list_workspaces.py \
+            --platform ${{ matrix.platform }} \
+            --output workspaces.json
+          
+          echo "list=$(cat workspaces.json)" >> $GITHUB_OUTPUT
+
+      - name: Run drift detection
+        if: steps.should-run.outputs.run == 'true'
+        env:
+          TFE_TOKEN: ${{ secrets.TFE_TOKEN }}
+          TFE_ORG: ${{ vars.TFE_ORG }}
+        run: |
+          python scripts/tfe_drift_detect.py \
+            --workspaces '${{ steps.workspaces.outputs.list }}' \
+            --output drift-results-${{ matrix.platform }}.json
+
+      - name: Upload drift results
+        if: steps.should-run.outputs.run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: drift-${{ matrix.platform }}
+          path: drift-results-${{ matrix.platform }}.json
+
+  process-drift:
+    name: Process Drift Results
+    needs: detect-drift
+    runs-on: ubuntu-latest
+    outputs:
+      has_drift: ${{ steps.analyze.outputs.has_drift }}
+      critical: ${{ steps.analyze.outputs.critical }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download all drift results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: drift-*
+          path: drift-results/
+          merge-multiple: true
+
+      - name: Analyze drift
+        id: analyze
+        run: |
+          python scripts/analyze_drift.py \
+            --results-dir drift-results/ \
+            --output drift-summary.json
+          
+          echo "has_drift=$(jq -r '.has_drift' drift-summary.json)" >> $GITHUB_OUTPUT
+          echo "critical=$(jq -r '.critical_drift' drift-summary.json)" >> $GITHUB_OUTPUT
+          
+          echo "Drift summary:"
+          cat drift-summary.json
+
+      - name: Upload drift summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: drift-summary
+          path: drift-summary.json
+
+  create-remediation-pr:
+    name: Create Remediation PR
+    needs: process-drift
+    if: needs.process-drift.outputs.has_drift == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download drift summary
+        uses: actions/download-artifact@v4
+        with:
+          name: drift-summary
+          path: ./
+
+      - name: Create remediation PR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python scripts/create_drift_pr.py \
+            --drift-summary drift-summary.json \
+            --strategy reapply
+
+  alert-critical:
+    name: Alert on Critical Drift
+    needs: process-drift
+    if: needs.process-drift.outputs.critical == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download drift summary
+        uses: actions/download-artifact@v4
+        with:
+          name: drift-summary
+          path: ./
+
+      - name: Send critical alert
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          PAGERDUTY_KEY: ${{ secrets.PAGERDUTY_KEY }}
+        run: |
+          python scripts/alert.py \
+            --severity critical \
+            --message "Critical drift detected in network security policies" \
+            --details drift-summary.json

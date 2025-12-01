@@ -1,0 +1,29 @@
+# Network Security Policy-as-Code CODEOWNERS
+# These owners will be requested for review when someone opens a pull request.
+
+# Default owners for everything
+* @network-security-team
+
+# Registry changes require infrastructure team approval
+/registry/ @infra-team @network-security-team
+
+# Production policies require NetSec approval
+/policies/production/ @network-security-team
+
+# Staging policies can be approved by app teams + NetSec
+/policies/staging/ @network-security-team @app-team-leads
+
+# Development policies have relaxed requirements
+/policies/development/ @app-team-leads
+
+# Adapters and core logic require platform team
+/adapters/ @network-security-platform-team
+
+# Guardrail changes require security architecture review
+/guardrails/ @network-security-team @security-architecture-team
+
+# Schema changes require platform team
+/schemas/ @network-security-platform-team
+
+# Workflow changes require platform team
+/.github/workflows/ @network-security-platform-team

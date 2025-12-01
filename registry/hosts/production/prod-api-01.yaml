@@ -1,0 +1,23 @@
+apiVersion: netsec/v1
+kind: Host
+metadata:
+  name: prod-api-01
+  owner: api-platform-team@company.com
+  cmdb-id: CI-10002
+
+spec:
+  description: "Production API server 01"
+  environment: production
+  location: datacenter-east
+  
+  addresses:
+    ipv4:
+      - 10.100.2.10
+    fqdn:
+      - prod-api-01.internal.company.com
+      
+  labels:
+    app: api-gateway
+    tier: api
+    environment: production
+    data-classification: confidential
