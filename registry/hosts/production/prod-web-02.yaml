@@ -3,7 +3,7 @@ kind: Host
 metadata:
   name: prod-web-02
   owner: web-platform-team@company.com
-  cmdb-id: CI-10002
+  cmdb-id: CI-10003
   description: Production web server 02
 
 spec:
