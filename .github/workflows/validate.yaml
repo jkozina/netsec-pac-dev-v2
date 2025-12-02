@@ -347,3 +347,51 @@ jobs:
                 labels: newLabels
               });
             }
+
+  notify-security-review:
+    name: Notify Security Team
+    needs: [evaluate-guardrails]
+    if: needs.evaluate-guardrails.outputs.require_review == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Slack notification
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          if [ -z "$SLACK_WEBHOOK_URL" ]; then
+            echo "SLACK_WEBHOOK_URL not set, skipping notification"
+            exit 0
+          fi
+          
+          curl -X POST "$SLACK_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d @- << EOF
+          {
+            "attachments": [
+              {
+                "color": "warning",
+                "title": "⚠️ Network Security Review Required",
+                "title_link": "${{ github.server_url }}/${{ github.repository }}/pull/${{ github.event.pull_request.number }}",
+                "fields": [
+                  {
+                    "title": "Pull Request",
+                    "value": "<${{ github.server_url }}/${{ github.repository }}/pull/${{ github.event.pull_request.number }}|#${{ github.event.pull_request.number }}: ${{ github.event.pull_request.title }}>",
+                    "short": false
+                  },
+                  {
+                    "title": "Author",
+                    "value": "${{ github.event.pull_request.user.login }}",
+                    "short": true
+                  },
+                  {
+                    "title": "Repository",
+                    "value": "${{ github.repository }}",
+                    "short": true
+                  }
+                ],
+                "footer": "Network Security Policy-as-Code",
+                "ts": ${{ github.event.pull_request.updated_at && '0' || '0' }}
+              }
+            ]
+          }
+          EOF
