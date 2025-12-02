@@ -1,0 +1,25 @@
+apiVersion: netsec/v1
+kind: Group
+metadata:
+  name: eks-worker-nodes
+  owner: platform-engineering@company.com
+  description: EKS worker nodes for production cluster
+
+spec:
+  description: "EKS worker nodes that need to communicate with each other for kubelet and API server traffic"
+  
+  membership:
+    dynamic:
+      match-labels:
+        role: eks-worker
+        environment: production
+        cluster: prod-eks-01
+
+  platform-mapping:
+    aws:
+      strategy: security-group-preferred
+      security-group:
+        tag-key: kubernetes.io/cluster/prod-eks-01
+        tag-value: owned
+      cidr-fallback:
+        enabled: false

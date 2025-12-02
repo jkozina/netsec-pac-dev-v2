@@ -1,0 +1,13 @@
+apiVersion: netsec/v1
+kind: Service
+metadata:
+  name: kubelet
+  description: Kubernetes kubelet API
+
+spec:
+  description: "Kubelet API for node-to-node communication"
+  
+  protocols:
+    - protocol: tcp
+      port: 10250
+      description: Kubelet API
