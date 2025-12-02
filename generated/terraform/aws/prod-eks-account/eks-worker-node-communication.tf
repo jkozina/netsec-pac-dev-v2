@@ -25,6 +25,18 @@ data "aws_security_group" "eks_worker_nodes" {
 
 resource "aws_security_group_rule" "eks_worker_node_communication_0_0" {
   type              = "ingress"
+  from_port         = 80
+  to_port           = 80
+  protocol          = "tcp"
+  source_security_group_id = data.aws_security_group.eks_worker_nodes.id
+  security_group_id = "TODO_DESTINATION_SG_ID"  # Configure based on scope
+  
+  description = "Allow EKS worker nodes to communicate with each other for kubelet and HTTPS traffic - SNOW-54321"
+}
+
+
+resource "aws_security_group_rule" "eks_worker_node_communication_1_0" {
+  type              = "ingress"
   from_port         = 443
   to_port           = 443
   protocol          = "tcp"
@@ -35,7 +47,7 @@ resource "aws_security_group_rule" "eks_worker_node_communication_0_0" {
 }
 
 
-resource "aws_security_group_rule" "eks_worker_node_communication_1_0" {
+resource "aws_security_group_rule" "eks_worker_node_communication_2_0" {
   type              = "ingress"
   from_port         = 10250
   to_port           = 10250
