@@ -1,0 +1,28 @@
+apiVersion: netsec/v1
+kind: Service
+metadata:
+  name: mysql
+  description: MySQL database
+
+spec:
+  description: "MySQL database traffic on port 3306"
+  
+  protocols:
+    - protocol: tcp
+      port: 3306
+      description: MySQL
+
+  platform-mapping:
+    paloalto:
+      use-app-id: true
+      applications:
+        - mysql
+      service: application-default
+      
+    fortinet:
+      service-name: MYSQL
+      
+    illumio:
+      service:
+        proto: 6
+        port: 3306

@@ -1,0 +1,28 @@
+apiVersion: netsec/v1
+kind: Service
+metadata:
+  name: redis
+  description: Redis cache/database
+
+spec:
+  description: "Redis cache and database traffic on port 6379"
+  
+  protocols:
+    - protocol: tcp
+      port: 6379
+      description: Redis
+
+  platform-mapping:
+    paloalto:
+      use-app-id: true
+      applications:
+        - redis
+      service: application-default
+      
+    fortinet:
+      service-name: TCP_6379
+      
+    illumio:
+      service:
+        proto: 6
+        port: 6379
