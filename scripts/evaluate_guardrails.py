@@ -122,12 +122,35 @@ class GuardrailEngine:
         
         # Internet-facing check
         if "source.type == internet" in condition.lower():
+            # Direct CIDR check
             if policy.spec.source.cidr in ["0.0.0.0/0", "any"]:
                 return True
+            # Check if source group contains 0.0.0.0/0
+            if policy.spec.source.group:
+                try:
+                    group = self.registry.get_group(policy.spec.source.group)
+                    if "0.0.0.0/0" in group.spec.membership.networks:
+                        return True
+                    # Also check if group is named "internet"
+                    if group.metadata.name.lower() == "internet":
+                        return True
+                except Exception:
+                    pass
         
         if "destination.type == internet" in condition.lower():
+            # Direct CIDR check
             if policy.spec.destination.cidr in ["0.0.0.0/0", "any"]:
                 return True
+            # Check if destination group contains 0.0.0.0/0
+            if policy.spec.destination.group:
+                try:
+                    group = self.registry.get_group(policy.spec.destination.group)
+                    if "0.0.0.0/0" in group.spec.membership.networks:
+                        return True
+                    if group.metadata.name.lower() == "internet":
+                        return True
+                except Exception:
+                    pass
         
         return False
 
