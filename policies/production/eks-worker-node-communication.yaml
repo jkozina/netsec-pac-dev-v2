@@ -1,0 +1,31 @@
+apiVersion: netsec/v1
+kind: NetworkPolicy
+metadata:
+  name: eks-worker-node-communication
+  requestor: platform-engineering@company.com
+  ticket: SNOW-54321
+  environment: production
+  labels:
+    application: kubernetes
+    cluster: prod-eks-01
+
+spec:
+  description: "Allow EKS worker nodes to communicate with each other for kubelet and HTTPS traffic"
+  
+  source:
+    group: eks-worker-nodes
+    
+  destination:
+    group: eks-worker-nodes
+    
+  services:
+    - https
+    - kubelet
+    
+  action: allow
+  logging: true
+  
+  targets:
+    - platform: aws
+      scope:
+        - prod-eks-account
