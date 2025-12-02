@@ -1,0 +1,28 @@
+apiVersion: netsec/v1
+kind: Service
+metadata:
+  name: postgres
+  description: PostgreSQL database
+
+spec:
+  description: "PostgreSQL database traffic on port 5432"
+  
+  protocols:
+    - protocol: tcp
+      port: 5432
+      description: PostgreSQL
+
+  platform-mapping:
+    paloalto:
+      use-app-id: true
+      applications:
+        - postgres
+      service: application-default
+      
+    fortinet:
+      service-name: POSTGRES
+      
+    illumio:
+      service:
+        proto: 6
+        port: 5432

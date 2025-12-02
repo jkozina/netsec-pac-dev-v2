@@ -1,0 +1,28 @@
+apiVersion: netsec/v1
+kind: Service
+metadata:
+  name: http
+  description: Standard HTTP traffic
+
+spec:
+  description: "Standard HTTP traffic on port 80"
+  
+  protocols:
+    - protocol: tcp
+      port: 80
+      description: HTTP
+
+  platform-mapping:
+    paloalto:
+      use-app-id: true
+      applications:
+        - web-browsing
+      service: application-default
+      
+    fortinet:
+      service-name: HTTP
+      
+    illumio:
+      service:
+        proto: 6
+        port: 80
