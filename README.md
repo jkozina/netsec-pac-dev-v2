@@ -1,4 +1,4 @@
-# Network Security Policy-as-Code
+# Network Security Policy-as-Code v2
 
 A vendor-agnostic, GitOps-driven framework for managing network security policies across multi-cloud and on-premises infrastructure.
 
