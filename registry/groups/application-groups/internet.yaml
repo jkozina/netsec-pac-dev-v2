@@ -1,0 +1,38 @@
+apiVersion: netsec/v1
+kind: Group
+metadata:
+  name: internet
+  owner: network-security@company.com
+  description: Internet source (0.0.0.0/0)
+
+spec:
+  description: "Represents inbound traffic from the public internet (any source)"
+  
+  membership:
+    networks:
+      - 0.0.0.0/0
+
+  platform-mapping:
+    aws:
+      strategy: cidr-only
+      
+    gcp:
+      strategy: cidr-only
+      
+    azure:
+      strategy: cidr-only
+      
+    paloalto:
+      strategy: static-only
+      static:
+        name: grp-internet
+        
+    fortinet:
+      strategy: address-group
+      address-group:
+        name: grp-internet
+        
+    illumio:
+      strategy: ip-list
+      ip-list:
+        name: ipl-internet

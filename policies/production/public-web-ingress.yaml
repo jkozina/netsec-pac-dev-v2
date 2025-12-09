@@ -1,0 +1,37 @@
+apiVersion: netsec/v1
+kind: NetworkPolicy
+metadata:
+  name: public-web-ingress
+  requestor: web-platform-team@company.com
+  ticket: SNOW-99999
+  environment: production
+  labels:
+    application: public-website
+    exposure: internet-facing
+
+spec:
+  description: "Allow HTTPS traffic from the internet to public web servers"
+  
+  source:
+    group: internet
+    
+  destination:
+    group: web-tier
+    
+  services:
+    - https
+    
+  action: allow
+  logging: true
+  
+  targets:
+    - platform: aws
+      scope:
+        - prod-web-account
+    - platform: paloalto
+      scope:
+        - datacenter-east
+        - datacenter-west
+    - platform: fortinet
+      scope:
+        - adom-production
