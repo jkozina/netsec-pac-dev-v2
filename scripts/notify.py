@@ -57,8 +57,14 @@ def send_slack_notification(
             }
         ]
     }
-    
-    requests.post(webhook_url, json=payload)
+
+    try:
+        response = requests.post(webhook_url, json=payload, timeout=10)
+        response.raise_for_status()
+    except requests.exceptions.Timeout:
+        raise RuntimeError(f"Slack notification timed out after 10 seconds") from None
+    except requests.exceptions.RequestException as e:
+        raise RuntimeError(f"Failed to send Slack notification: {e}") from e
 
 
 def main():
